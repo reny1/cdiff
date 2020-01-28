@@ -1,0 +1,492 @@
+---
+title: "C Diff Analysis"
+date: "Jan. 6, 2020"
+output:
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo=FALSE, 
+  message=FALSE, 
+  warning=FALSE,
+  results = "hide",
+  cache=FALSE,
+  fig.width = 10)
+```
+
+```{r}
+library(ggdendro)
+library(reshape2)
+library(vegan)
+library(ape)
+library(randomForest)
+library(nlme)
+library(ggbeeswarm)
+library(tableone)
+library(flextable)
+library(officer)
+library(pander)
+library(xlsx)
+library(ggplot2)
+library(tidyr)
+library(pheatmap)
+library(magrittr)
+library(dplyr)
+```
+
+
+```{r}
+cutoffMed = 28 # the cut off for medication records
+
+study_group_new_label_color= c("black","#1F78B4","#6A3D9A", "#FF7F00","#E31A1C")
+names(study_group_new_label_color) = c("centroid","Healthy", "ONC\nC. diff", "IBD", "IBD\nC. diff" )
+
+antibiotics_label_shape = c(8,1,10,19)
+names(antibiotics_label_shape) = c("centroid","No antibiotics", "Past use", "Current use")
+antibiotics_label_color = c("black","#A6CEE3", "#FB9A99", "#E41A1C" )
+names(antibiotics_label_color) = c("centroid", "No antibiotics", "Past use","Current use"     )
+
+study_group_new_label_long_color= c("black","#1F78B4","#6A3D9A", "#FF7F00","#E31A1C")
+names(study_group_new_label_long_color) = c("centroid","Healthy", "ONC C. diff", "IBD", "IBD C. diff" )
+
+baseline_clinical_score_cat_col = c( "#1F78B4","#6A3D9A", "#FED976","#FD8D3C", "#E31A1C",  "#800026")
+names(baseline_clinical_score_cat_col) = c("Healthy","ONC_C.Diff",  "Inactive",  "Mild"     , "Moderate" ,  "Severe")
+
+clinical_response_to_cdiff_therapy_color = c("#0072B2", "#D55E00","#329c37")
+names(clinical_response_to_cdiff_therapy_color) = c("No","Yes","No_C.Diff")
+clinical_response_to_cdiff_therapy_shape = c(1,19,10)
+names(clinical_response_to_cdiff_therapy_shape) = c("No response","Response","No therapy")
+
+clinical_severity_col = c("#8DA0CB", "#E31A1C")
+names(clinical_severity_col) =  c("Non-Severe","Severe" )
+
+```
+
+# Figure 1 qPCR
+
+This is plot for qPCR values of fecal samples at 3 time points.
+
+```{r}
+sampleData = readxl::read_excel(path = "data/figure_1_qPCR_data.xlsx")
+```
+
+```{r results = T}
+temp = sampleData %>%
+  filter(study_group_new %in% c("IBD_C.Diff")) %>%
+  mutate(current_antibiotics = ifelse(antibiotics == "Yes", "Yes","No/Past")) %>%
+  filter(!is.na(clinical_response_to_cdiff_therapy))
+fligner.test(tcdB_ct_ave~as.factor(current_antibiotics),data = temp)
+
+lme.result0 =  lme(tcdB_ct_ave ~ current_antibiotics+ Time ,random=~1|SubjectID, data =temp,method = "ML")
+# anova(lme.result0,lme.result1)
+pander(lme.result0, split.table = Inf)
+```
+
+Shape by antibiotics.
+
+```{r}
+sampleData %>%
+  ggplot(aes(x = study_group_new_label, y = tcdB_ct_ave, color = study_group_new_label)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_quasirandom(aes(shape = antibiotics_label))+
+  scale_shape_manual(values = antibiotics_label_shape)+
+  scale_color_manual(values = study_group_new_label_color)+
+  # scale_y_log10()+
+  facet_grid(~redcap_event_name_label) +
+  labs(x = "", y = "C Diff qPCR")+
+  theme_bw()+
+  theme(legend.title = element_blank()) +
+  guides(color = F)
+```
+
+Shape by response to therapy.
+
+```{r}
+sampleData %>%
+  mutate(clinical_response_to_cdiff_therapy_label = ifelse(is.na(clinical_response_to_cdiff_therapy),"No therapy", ifelse(clinical_response_to_cdiff_therapy == "Yes","Response", "No response"))) %>%
+  ggplot(aes(x = study_group_new_label, y = tcdB_ct_ave, color = study_group_new_label)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_quasirandom(aes(shape = clinical_response_to_cdiff_therapy_label))+
+  scale_shape_manual(values = clinical_response_to_cdiff_therapy_shape)+
+  scale_color_manual(values = study_group_new_label_color)+
+  # scale_y_log10()+
+  facet_grid(~redcap_event_name_label) +
+  labs(x = "", y = "C Diff qPCR")+
+  theme_bw()+
+  theme(legend.title = element_blank()) +
+  guides(color = F)
+```
+
+# Figure 4 A
+
+This is the heatmap of the top 30 important features from the randomForest model when comparing IBD_C.Diff and Healthy using the Kraken result at the Baseline Visit.
+
+The data is arc sin transformed before making the heatmap.
+
+```{r}
+taxaData = read.table("data/figure_4_A_taxa.txt")
+hpData = asin(sqrt(taxaData))
+sampleData = readxl::read_excel(path = "data/figure_4_A_sample.xlsx") %>%
+  as.data.frame()
+```
+
+
+```{r}
+tempData = sampleData %>%
+  select(SampleID,study_group_new_label,calprotectin_ave) %>%
+  mutate(study_group_new_label = gsub("\n"," ",study_group_new_label)) %>%
+  rename(`Study group` = study_group_new_label,
+         `Calprotectin (µg/g)` = calprotectin_ave)
+ann_colors = list(
+ `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
+)
+
+
+breaks =unique( c(seq(min(hpData)/1.1,quantile(unlist(hpData))[2],length = 20),
+                  seq(quantile(unlist(hpData))[2],quantile(unlist(hpData))[3],length= 50),
+                  seq(quantile(unlist(hpData))[3],quantile(unlist(hpData))[4],length = 80),
+                  seq(quantile(unlist(hpData))[4],max(hpData),length = 200)))
+
+hmcols<- qiimer::saturated_rainbow(length(breaks)-1,saturation_limit = 0.6)
+
+
+rownames(hpData) = gsub("s__","",gsub("\\<s__\\>","unclassified",gsub(" g__","-",gsub("p__","",rownames(hpData)))))
+rownames(tempData) = tempData$SampleID
+
+pheatmap(hpData,clustering_distance_rows = "correlation",clustering_distance_cols = "correlation",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, treeheight_row = 0, show_colnames = F)
+```
+
+# Figure 4 B
+
+This is the heatmap of the top 30 important features from the randomForest model when comparing IBD C.Diff and IBD using the Kraken result at the Baseline Visit.
+
+The data is arc sin transformed before making the heatmap.
+
+```{r}
+taxaData = read.table("data/figure_4_B_taxa.txt")
+hpData = asin(sqrt(taxaData))
+sampleData = readxl::read_excel(path = "data/figure_4_B_sample.xlsx")
+```
+
+```{r}
+tempData = sampleData %>%
+  select(SampleID,study_group_new_label,calprotectin_ave) %>%
+  mutate(study_group_new_label = gsub("\n"," ",study_group_new_label)) %>%
+  rename(`Study group` = study_group_new_label,
+         `Calprotectin (µg/g)` = calprotectin_ave) %>%
+  as.data.frame()
+
+ann_colors = list(
+ `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
+)
+
+breaks =unique( c(seq(min(hpData)/1.1,quantile(unlist(hpData))[2],length = 20),
+                  seq(quantile(unlist(hpData))[2],quantile(unlist(hpData))[3],length= 50),
+                  seq(quantile(unlist(hpData))[3],quantile(unlist(hpData))[4],length = 80),
+                  seq(quantile(unlist(hpData))[4],max(hpData),length = 200)))
+hmcols<- qiimer::saturated_rainbow(length(breaks)-1,saturation_limit = 0.6)
+
+rownames(tempData) = tempData$SampleID
+rownames(hpData) = gsub("s__","",gsub("\\<s__\\>","unclassified",gsub(" g__","-",gsub("p__","",rownames(hpData)))))
+# pdf(file = paste0("figures/figure_4_B_",Sys.Date(),".pdf"),useDingbats=F, width = 6,height = 6)
+pheatmap(hpData,clustering_distance_rows = "canberra",clustering_distance_cols = "canberra",clustering_method = "ward.D2",annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4,treeheight_row = F, show_colnames = F)
+# dev.off()
+```
+
+# Figure 6 A
+
+This is the heatmap of the top 30 important features from the randomForest model when comparing IBD C.Diff and Healthy using the metabolomics data at the Baseline Visit.
+
+```{r}
+hpData = read.table("data/figure_6_A_Bio.txt")
+colnames(hpData) = gsub("\\.","-",colnames(hpData))
+sampleData = readxl::read_excel(path = "data/figure_6_A_sample.xlsx") %>%
+  as.data.frame()
+```
+
+
+```{r}
+tempData = sampleData %>%
+  select(SAMPLE_NAME,study_group_new_label, calprotectin_ave) %>%
+  # mutate(study_group_new_label = droplevels(study_group_new_label)) %>%
+  mutate(study_group_new_label = gsub("\n"," ", study_group_new_label)) %>%
+  rename(`Study group` = study_group_new_label,
+         `Calprotectin (µg/g)` = calprotectin_ave)
+
+rownames(tempData) = tempData$SAMPLE_NAME
+
+ann_colors = list(
+ `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
+)
+
+breaks = unique(c(
+  seq(-3,-0.1,length =80),
+  seq(-0.1,0,length =50),
+  seq(0,0.6,length =50),
+  seq(0.6,2.6,length =80)
+))
+hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
+
+pheatmap(hpData,clustering_distance_rows = "manhattan",clustering_distance_cols = "manhattan",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, treeheight_row = F, show_colnames = F)
+
+```
+
+# Figure 6 B
+
+This is the heatmap of the top 30 important features from the randomForest model when comparing IBD C.Diff and IBD using the metabolomics data at the Baseline Visit.
+
+```{r}
+hpData = read.table("data/figure_6_B_Bio.txt")
+colnames(hpData) = gsub("\\.","-",colnames(hpData))
+sampleData = readxl::read_excel(path = "data/figure_6_B_sample.xlsx") %>%
+  as.data.frame()
+```
+
+```{r}
+tempData = sampleData %>%
+  select(SAMPLE_NAME,study_group_new_label, calprotectin_ave) %>%
+  mutate(study_group_new_label = gsub("\n"," ", study_group_new_label)) %>%
+  rename(`Study group` = study_group_new_label,
+         `Calprotectin (µg/g)` = calprotectin_ave)
+rownames(tempData) = tempData$SAMPLE_NAME
+
+ann_colors = list(
+ `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
+)
+
+breaks = unique(c(
+  seq(-3,-0.1,length =80),
+  seq(-0.1,0,length =50),
+  seq(0,0.6,length =50),
+  seq(0.6,2.6,length =80)
+))
+hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
+
+
+pheatmap(hpData,clustering_distance_rows = "manhattan",clustering_distance_cols = "manhattan",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, show_colnames = F, treeheight_row = 0)
+```
+
+
+# Figure 7 B
+
+This is the heatmap of the top 30 important features from the randomForest model when comparing severe IBD C.Diff and non-severe IBD C.Diff using the metabolomics data at the Baseline Visit.
+
+```{r}
+hpData = read.table("data/figure_7_B_Bio.txt")
+colnames(hpData) = gsub("\\.","-",colnames(hpData))
+sampleData = readxl::read_excel(path = "data/figure_7_B_sample.xlsx") %>%
+  as.data.frame()
+```
+
+```{r}
+tempData = sampleData %>%
+  select(SAMPLE_NAME,clinical_severity,  calprotectin_ave) %>%
+  rename(`Clinical Severity` = clinical_severity,
+         `Calprotectin (µg/g)` = calprotectin_ave) 
+rownames(tempData) = tempData$SAMPLE_NAME
+
+ann_colors = list(
+  `Clinical Severity` = clinical_severity_col
+  # ibd_diagnosis = ibd_diagnosis_color[unique(sampleData$ibd_diagnosis)]
+)
+
+breaks = unique(c(
+  seq(-3,-0.1,length =80),
+  seq(-0.1,0,length =50),
+  seq(0,0.6,length =50),
+  seq(0.6,2.6,length =80)
+))
+hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
+
+pheatmap(hpData,clustering_distance_rows = "correlation",clustering_distance_cols = "correlation",clustering_method = "ward.D2",annotation_col = tempData[,c("Clinical Severity","Calprotectin (µg/g)")],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, treeheight_row = F, show_colnames = F)
+```
+
+# Supplementary Figure 3
+
+This is a plot to summarise the antibiotics information for oncology C.Diff and IBD C.Diff patients.
+
+```{r}
+
+# a function used to plot the abx plot for different sample types including samples with no antibiotics usage for the c cdiff paper different from v5 is that it does not contain cdiff abudance burden and qpcr.
+#' @param sampleData
+#' @param alex_medRaw
+#' @param SampleType the collection date of which sample type should be used
+#' @param order_subject
+#' @return a plot
+
+
+plotAbxDisease_v6_all_samples_move_start <- function(sampleData, alex_medRaw, sampleType = "Feces", cutoff = 90, order_subject){
+  sampleData %<>% filter(SampleType == sampleType)
+  
+  medData <- alex_medRaw %>%
+    filter(SampleType == sampleType) %>%
+    filter(medCategory ==  "antibiotics") %>%
+    filter(ehb_id %in% sampleData$ehb_id) 
+  # add the samples with no antibiotics usage during the study
+  temp1 = intersect(colnames(medData), colnames(sampleData))
+  temp2 = setdiff(colnames(medData), colnames(sampleData))
+  temp3 = sampleData %>%
+    filter(!ehb_id %in% medData$ehb_id)
+  temp3 = temp3[,temp1]
+  temp3 %<>% unique
+  temp = matrix(data = NA, nrow = nrow(temp3), ncol = length(temp2))
+  colnames(temp) = temp2
+  temp = as.data.frame(temp)
+  temp$therapy_prior_med_log = rep("No Abx", nrow(temp3))
+  temp$medCategory = rep( "antibiotics", nrow(temp3))
+  temp$therapeutic_category = rep("Antibiotics", nrow(temp3))
+  temp = cbind(temp3,temp)
+  medData %<>% bind_rows(temp)
+  remove(temp1,temp2,temp3,temp)
+  
+  # add SubjectID and IBD Diagnosis to medData
+  medData %<>% left_join(sampleData %>% select(SubjectID,study_group_new_label,clinical_severity,ehb_id) %>%unique, by = "ehb_id")
+  medData %<>% mutate(study_group_new_label = gsub("\n"," ", study_group_new_label))
+  
+  medData %<>% group_by(ehb_id, SubjectID, SampleType) %>%
+    mutate(study_start_date = collect_date_time,
+           study_stop_date = collect_date_time) %>%
+    mutate(study_start_date = min(study_start_date, na.rm = T)) %>%
+    mutate(study_stop_date = max(study_stop_date, na.rm = T)) %>%
+    ungroup() %>%
+    as.data.frame()
+  
+  # turn date into days
+  medData.days <- medData %>%
+    mutate(collect_date_time = as.integer(collect_date_time -study_start_date), 
+           med_start_date = as.integer(med_start_date - study_start_date), 
+           med_end_date = as.integer(med_end_date - study_start_date), 
+           study_stop_date = as.integer(study_stop_date - study_start_date)) %>%
+    mutate(med_end_date = if_else(is.na(med_end_date) & !is.na(med_start_date) & (study_stop_date > med_start_date), study_stop_date, med_end_date)) %>%
+    as.data.frame()
+  
+  medData.days %<>% mutate(med_start_date = ifelse(!is.na(med_start_date) & med_start_date< -56,-56, med_start_date))
+  
+  temp1 = medData.days %>%
+    filter( !is.na(med_end_date) & med_end_date < -cutoff)
+  
+  medData.days %<>% filter((!is.na(med_end_date) & med_end_date >=-cutoff)|is.na(med_end_date)) %>%
+    as.data.frame() 
+  
+  temp1 %<>% filter(!ehb_id %in% medData.days$ehb_id)
+  temp1$medication_name = rep(NA,nrow(temp1))
+  temp1$daily_antibiotics_dosage = rep(NA,nrow(temp1))
+  temp1$therapy_prior_med_log = rep("No Abx", nrow(temp1))
+  temp1$med_start_date = rep(NA,nrow(temp1))
+  temp1$med_end_date = rep(NA,nrow(temp1))
+  
+  medData.days %<>% bind_rows(temp1)
+  
+  remove(temp1)
+  temp = medData.days %>%
+    select(SubjectID, therapy_prior_med_log) %>%
+    unique()
+  
+  if (nrow(temp) != length(unique(temp$SubjectID))){
+    temp %<>% mutate(therapy_prior_med_log = ifelse(therapy_prior_med_log == "Yes",1,ifelse(therapy_prior_med_log ==  "No",0, ifelse(therapy_prior_med_log == "No Abx",2,-1)))) %>%
+      group_by(SubjectID) %>%
+      mutate(therapy_prior_med_log = max(therapy_prior_med_log, na.rm = T)) %>%
+      ungroup() %>%
+      as.data.frame() %>%
+      unique() %>%
+      mutate(therapy_prior_med_log = ifelse(therapy_prior_med_log == 1, "Yes", ifelse(therapy_prior_med_log == 0,"No",ifelse(therapy_prior_med_log == 2,"No Abx",""))))
+  }
+  
+  temp %<>% mutate(SubjectID_new = SubjectID)
+  
+  medData.days %<>% select(-therapy_prior_med_log)
+  medData.days %<>% left_join(temp, by = "SubjectID") %>%
+    select(-SubjectID) %>%
+    rename(SubjectID = SubjectID_new)
+  
+  xlimits <- medData.days %>%
+    select(SubjectID) %>%
+    mutate(SubjectID_orig = gsub("_.*","",SubjectID)) %>%
+    unique() %>%
+    left_join(order_subject, by = c("SubjectID_orig" = "SubjectID")) %>%
+    arrange(x) %>%
+    select(SubjectID,x) %>%
+    unique() 
+  xlimits %<>%mutate(SubjectID_num = seq(1,1+(nrow(xlimits)-1)*2,2))
+  xlimits %<>% select(-x)
+  medData.days %<>% left_join(xlimits, by = c("SubjectID"))
+  xlimits = xlimits[rep(seq_len(nrow(xlimits)),each = 2),]
+  xlimits %<>% mutate(SubjectID_num = 1:nrow(xlimits))
+  
+  
+  # For those subjects that did not use antibiotics during the study, set theri med_start_date to 0
+  # View(medData.days %>% filter(therapy_prior_med_log == "No Abx"))
+  # medData.days %<>% mutate(med_start_date = ifelse(therapy_prior_med_log == "No Abx",0,med_start_date))
+  medData.days %<>% mutate(route_admin_med = ifelse(therapy_prior_med_log == "No Abx","No Abx",route_admin_med))
+  medData.days %<>% mutate(route_admin_med = ifelse(therapy_prior_med_log == "No Abx","",route_admin_med))
+  
+  #  "Intravenous (IV)"     is the same as IVD
+  medData.days %<>% mutate(route_admin_med = ifelse(!is.na(route_admin_med) & route_admin_med ==  "Intravenous (IV)", "IV", route_admin_med))
+  
+  shape_formAbx <- c(10,1,15)
+  names(shape_formAbx) = c("Oral/NG Tube", "Unspecified", "IV")
+  
+  barY <- min(medData.days$collect_date_time,medData.days$med_start_date, na.rm = T)-10
+  color_ann = c("#882E72", "#B178A6", "#D6C1DE", "#2d83bc", "#A6CEE3" , "#076302","#33A02C", "#B2DF8A", "#F6C141", "#E8601C","#FB9A99","#E31A1C","black","#ff0094")[1:length(unique(medData.days$medication_name))]
+  
+  study_group_new_label_long_color= c("black","#1F78B4","#6A3D9A", "#FF7F00","#E31A1C")
+  names(study_group_new_label_long_color) = c("centroid","Healthy", "ONC C. diff", "IBD", "IBD C. diff" )
+  
+  clinical_severity_col = c("#8DA0CB", "#FB9A99" )
+  names(clinical_severity_col) = c("Non-Severe",     "Severe" )
+  
+  medData.days %<>%
+    mutate(route_admin_med = ifelse(ehb_id == "c36b1132ac829ece87dda55d77ac06a4" & medication_name == "Vancomycin (Lyphocin, Vancocin,Vancoled, Vancor)" & route_admin_med == "", "Oral", route_admin_med))
+  
+  # correct the spell error
+  medData.days %<>%
+    mutate(medication_name = ifelse(medication_name == "Metronidazol","Metronidazole",medication_name))
+  medData.days %<>%
+    mutate(route_admin_med = ifelse(route_admin_med == ""|is.na(route_admin_med),"Unspecified", route_admin_med))
+  medData.days %<>%
+    mutate(route_admin_med = ifelse(route_admin_med %in% c("Oral" , "NG Tube" ),"Oral/NG Tube", route_admin_med))
+  
+  
+  medData.days %<>%
+    mutate(medication_name = ifelse(is.na(medication_name),"Unspecified",medication_name))
+  
+  
+  abxPlot = medData.days %>%
+    ggplot(aes(y =  med_start_date, x = SubjectID_num)) + 
+    geom_segment(aes(y = collect_date_time,x=SubjectID_num, yend = study_stop_date, xend = SubjectID_num), color = "gray88", lwd = 5) +
+    geom_segment(aes(y = collect_date_time-0.2,x=SubjectID_num, yend = collect_date_time+0.2, xend = SubjectID_num), color = "white", lwd = 5) +
+    geom_point(aes(color = medication_name,shape = route_admin_med),size=1.5, position = position_dodge(0.8)) +
+    geom_linerange(aes(ymin = med_start_date,ymax = med_end_date,color = medication_name),position =position_dodge(0.8)) +
+    labs(y = "Time(days)", 
+         caption = "The start date of the antibiotics that had started more than 56 days before the 1st sample collection is set to -56.\nThe relative abundance of one sample adds up to 1.\n The unit of c. diff burden is CFUs/ gram of stool.") +
+    scale_color_manual(values = color_ann)+
+    scale_shape_manual(values = shape_formAbx)+
+    geom_rect(aes(xmin = SubjectID_num -0.5,xmax =  SubjectID_num+1, ymin = barY-1, ymax = barY+1, fill = study_group_new_label)) +
+    geom_rect(aes(xmin = SubjectID_num -0.5,xmax =  SubjectID_num+1, ymin = barY+1.2, ymax = barY+3.2, fill = clinical_severity)) +
+    scale_x_discrete(name ="SubjectID", 
+                     limits=xlimits$SubjectID) +
+    scale_fill_manual(values =    c(study_group_new_label_long_color, clinical_severity_col) )+
+    coord_flip() +
+    theme_bw() +
+    theme(legend.title = element_blank())
+  print(abxPlot)
+  
+  print(paste0( unique( sampleData[which(!sampleData$ehb_id %in% medData.days$ehb_id),"SubjectID"]), " do not have abx records within ", cutoff, " days of first", sampleType, " sample collection."))
+  
+}
+```
+
+```{r}
+sampleData = readxl::read_excel(path = "data/figure_supplementary_figure_3_sample.xlsx") %>%
+  as.data.frame()
+alex_medRaw = readxl::read_excel(path = "data/figure_supplementary_figure_3_medication.xlsx") %>%
+  as.data.frame()
+order_abx_plot = readxl::read_excel(path = "data/figure_supplementary_figure_3_y_order.xlsx") %>%
+  as.data.frame()
+```
+
+```{r fig.width=14,fig.height=11}
+plotAbxDisease_v6_all_samples_move_start(sampleData =sampleData, alex_medRaw = alex_medRaw, cutoff = cutoffMed, order_subject = order_abx_plot)
+```
