@@ -1,6 +1,6 @@
 ---
 title: "C Diff Analysis"
-date: "Jan. 6, 2020"
+date: "Feb. 5, 2020"
 output:
   pdf_document:
     toc: yes
@@ -61,254 +61,13 @@ names(clinical_response_to_cdiff_therapy_shape) = c("No response","Response","No
 
 clinical_severity_col = c("#8DA0CB", "#E31A1C")
 names(clinical_severity_col) =  c("Non-Severe","Severe" )
+clinical_severity_shape = c(19,10,1)
+names(clinical_severity_shape) =  c("Severe","Non-Severe","No_C.Diff")
 
-```
-
-# Figure 1 qPCR
-
-This is plot for qPCR values of fecal samples at 3 time points.
-
-```{r}
-sampleData = readxl::read_excel(path = "data/figure_1_qPCR_data.xlsx")
-```
-
-```{r results = T}
-temp = sampleData %>%
-  filter(study_group_new %in% c("IBD_C.Diff")) %>%
-  mutate(current_antibiotics = ifelse(antibiotics == "Yes", "Yes","No/Past")) %>%
-  filter(!is.na(clinical_response_to_cdiff_therapy))
-fligner.test(tcdB_ct_ave~as.factor(current_antibiotics),data = temp)
-
-lme.result0 =  lme(tcdB_ct_ave ~ current_antibiotics+ Time ,random=~1|SubjectID, data =temp,method = "ML")
-# anova(lme.result0,lme.result1)
-pander(lme.result0, split.table = Inf)
-```
-
-Shape by antibiotics.
-
-```{r}
-sampleData %>%
-  ggplot(aes(x = study_group_new_label, y = tcdB_ct_ave, color = study_group_new_label)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_quasirandom(aes(shape = antibiotics_label))+
-  scale_shape_manual(values = antibiotics_label_shape)+
-  scale_color_manual(values = study_group_new_label_color)+
-  # scale_y_log10()+
-  facet_grid(~redcap_event_name_label) +
-  labs(x = "", y = "C Diff qPCR")+
-  theme_bw()+
-  theme(legend.title = element_blank()) +
-  guides(color = F)
-```
-
-Shape by response to therapy.
-
-```{r}
-sampleData %>%
-  mutate(clinical_response_to_cdiff_therapy_label = ifelse(is.na(clinical_response_to_cdiff_therapy),"No therapy", ifelse(clinical_response_to_cdiff_therapy == "Yes","Response", "No response"))) %>%
-  ggplot(aes(x = study_group_new_label, y = tcdB_ct_ave, color = study_group_new_label)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_quasirandom(aes(shape = clinical_response_to_cdiff_therapy_label))+
-  scale_shape_manual(values = clinical_response_to_cdiff_therapy_shape)+
-  scale_color_manual(values = study_group_new_label_color)+
-  # scale_y_log10()+
-  facet_grid(~redcap_event_name_label) +
-  labs(x = "", y = "C Diff qPCR")+
-  theme_bw()+
-  theme(legend.title = element_blank()) +
-  guides(color = F)
-```
-
-# Figure 4 A
-
-This is the heatmap of the top 30 important features from the randomForest model when comparing IBD_C.Diff and Healthy using the Kraken result at the Baseline Visit.
-
-The data is arc sin transformed before making the heatmap.
-
-```{r}
-taxaData = read.table("data/figure_4_A_taxa.txt")
-hpData = asin(sqrt(taxaData))
-sampleData = readxl::read_excel(path = "data/figure_4_A_sample.xlsx") %>%
-  as.data.frame()
 ```
 
 
 ```{r}
-tempData = sampleData %>%
-  select(SampleID,study_group_new_label,calprotectin_ave) %>%
-  mutate(study_group_new_label = gsub("\n"," ",study_group_new_label)) %>%
-  rename(`Study group` = study_group_new_label,
-         `Calprotectin (µg/g)` = calprotectin_ave)
-ann_colors = list(
- `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
-)
-
-
-breaks =unique( c(seq(min(hpData)/1.1,quantile(unlist(hpData))[2],length = 20),
-                  seq(quantile(unlist(hpData))[2],quantile(unlist(hpData))[3],length= 50),
-                  seq(quantile(unlist(hpData))[3],quantile(unlist(hpData))[4],length = 80),
-                  seq(quantile(unlist(hpData))[4],max(hpData),length = 200)))
-
-hmcols<- qiimer::saturated_rainbow(length(breaks)-1,saturation_limit = 0.6)
-
-
-rownames(hpData) = gsub("s__","",gsub("\\<s__\\>","unclassified",gsub(" g__","-",gsub("p__","",rownames(hpData)))))
-rownames(tempData) = tempData$SampleID
-
-pheatmap(hpData,clustering_distance_rows = "correlation",clustering_distance_cols = "correlation",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, treeheight_row = 0, show_colnames = F)
-```
-
-# Figure 4 B
-
-This is the heatmap of the top 30 important features from the randomForest model when comparing IBD C.Diff and IBD using the Kraken result at the Baseline Visit.
-
-The data is arc sin transformed before making the heatmap.
-
-```{r}
-taxaData = read.table("data/figure_4_B_taxa.txt")
-hpData = asin(sqrt(taxaData))
-sampleData = readxl::read_excel(path = "data/figure_4_B_sample.xlsx")
-```
-
-```{r}
-tempData = sampleData %>%
-  select(SampleID,study_group_new_label,calprotectin_ave) %>%
-  mutate(study_group_new_label = gsub("\n"," ",study_group_new_label)) %>%
-  rename(`Study group` = study_group_new_label,
-         `Calprotectin (µg/g)` = calprotectin_ave) %>%
-  as.data.frame()
-
-ann_colors = list(
- `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
-)
-
-breaks =unique( c(seq(min(hpData)/1.1,quantile(unlist(hpData))[2],length = 20),
-                  seq(quantile(unlist(hpData))[2],quantile(unlist(hpData))[3],length= 50),
-                  seq(quantile(unlist(hpData))[3],quantile(unlist(hpData))[4],length = 80),
-                  seq(quantile(unlist(hpData))[4],max(hpData),length = 200)))
-hmcols<- qiimer::saturated_rainbow(length(breaks)-1,saturation_limit = 0.6)
-
-rownames(tempData) = tempData$SampleID
-rownames(hpData) = gsub("s__","",gsub("\\<s__\\>","unclassified",gsub(" g__","-",gsub("p__","",rownames(hpData)))))
-# pdf(file = paste0("figures/figure_4_B_",Sys.Date(),".pdf"),useDingbats=F, width = 6,height = 6)
-pheatmap(hpData,clustering_distance_rows = "canberra",clustering_distance_cols = "canberra",clustering_method = "ward.D2",annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4,treeheight_row = F, show_colnames = F)
-# dev.off()
-```
-
-# Figure 6 A
-
-This is the heatmap of the top 30 important features from the randomForest model when comparing IBD C.Diff and Healthy using the metabolomics data at the Baseline Visit.
-
-```{r}
-hpData = read.table("data/figure_6_A_Bio.txt")
-colnames(hpData) = gsub("\\.","-",colnames(hpData))
-sampleData = readxl::read_excel(path = "data/figure_6_A_sample.xlsx") %>%
-  as.data.frame()
-```
-
-
-```{r}
-tempData = sampleData %>%
-  select(SAMPLE_NAME,study_group_new_label, calprotectin_ave) %>%
-  # mutate(study_group_new_label = droplevels(study_group_new_label)) %>%
-  mutate(study_group_new_label = gsub("\n"," ", study_group_new_label)) %>%
-  rename(`Study group` = study_group_new_label,
-         `Calprotectin (µg/g)` = calprotectin_ave)
-
-rownames(tempData) = tempData$SAMPLE_NAME
-
-ann_colors = list(
- `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
-)
-
-breaks = unique(c(
-  seq(-3,-0.1,length =80),
-  seq(-0.1,0,length =50),
-  seq(0,0.6,length =50),
-  seq(0.6,2.6,length =80)
-))
-hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
-
-pheatmap(hpData,clustering_distance_rows = "manhattan",clustering_distance_cols = "manhattan",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, treeheight_row = F, show_colnames = F)
-
-```
-
-# Figure 6 B
-
-This is the heatmap of the top 30 important features from the randomForest model when comparing IBD C.Diff and IBD using the metabolomics data at the Baseline Visit.
-
-```{r}
-hpData = read.table("data/figure_6_B_Bio.txt")
-colnames(hpData) = gsub("\\.","-",colnames(hpData))
-sampleData = readxl::read_excel(path = "data/figure_6_B_sample.xlsx") %>%
-  as.data.frame()
-```
-
-```{r}
-tempData = sampleData %>%
-  select(SAMPLE_NAME,study_group_new_label, calprotectin_ave) %>%
-  mutate(study_group_new_label = gsub("\n"," ", study_group_new_label)) %>%
-  rename(`Study group` = study_group_new_label,
-         `Calprotectin (µg/g)` = calprotectin_ave)
-rownames(tempData) = tempData$SAMPLE_NAME
-
-ann_colors = list(
- `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
-)
-
-breaks = unique(c(
-  seq(-3,-0.1,length =80),
-  seq(-0.1,0,length =50),
-  seq(0,0.6,length =50),
-  seq(0.6,2.6,length =80)
-))
-hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
-
-
-pheatmap(hpData,clustering_distance_rows = "manhattan",clustering_distance_cols = "manhattan",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, show_colnames = F, treeheight_row = 0)
-```
-
-
-# Figure 7 B
-
-This is the heatmap of the top 30 important features from the randomForest model when comparing severe IBD C.Diff and non-severe IBD C.Diff using the metabolomics data at the Baseline Visit.
-
-```{r}
-hpData = read.table("data/figure_7_B_Bio.txt")
-colnames(hpData) = gsub("\\.","-",colnames(hpData))
-sampleData = readxl::read_excel(path = "data/figure_7_B_sample.xlsx") %>%
-  as.data.frame()
-```
-
-```{r}
-tempData = sampleData %>%
-  select(SAMPLE_NAME,clinical_severity,  calprotectin_ave) %>%
-  rename(`Clinical Severity` = clinical_severity,
-         `Calprotectin (µg/g)` = calprotectin_ave) 
-rownames(tempData) = tempData$SAMPLE_NAME
-
-ann_colors = list(
-  `Clinical Severity` = clinical_severity_col
-  # ibd_diagnosis = ibd_diagnosis_color[unique(sampleData$ibd_diagnosis)]
-)
-
-breaks = unique(c(
-  seq(-3,-0.1,length =80),
-  seq(-0.1,0,length =50),
-  seq(0,0.6,length =50),
-  seq(0.6,2.6,length =80)
-))
-hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
-
-pheatmap(hpData,clustering_distance_rows = "correlation",clustering_distance_cols = "correlation",clustering_method = "ward.D2",annotation_col = tempData[,c("Clinical Severity","Calprotectin (µg/g)")],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, treeheight_row = F, show_colnames = F)
-```
-
-# Supplementary Figure 3
-
-This is a plot to summarise the antibiotics information for oncology C.Diff and IBD C.Diff patients.
-
-```{r}
-
 # a function used to plot the abx plot for different sample types including samples with no antibiotics usage for the c cdiff paper different from v5 is that it does not contain cdiff abudance burden and qpcr.
 #' @param sampleData
 #' @param alex_medRaw
@@ -476,7 +235,882 @@ plotAbxDisease_v6_all_samples_move_start <- function(sampleData, alex_medRaw, sa
   print(paste0( unique( sampleData[which(!sampleData$ehb_id %in% medData.days$ehb_id),"SubjectID"]), " do not have abx records within ", cutoff, " days of first", sampleType, " sample collection."))
   
 }
+
+# a function used to make the bar plot for top important features from the randomForest analysis.
+#' @param avgScore average importance score for all features
+#' @param n_features making barPlot for top n_features, default set to 30
+#' 
+#' @example barPlotRF(avgScore = avgImportance)
+
+barPlotRF <- function(avgScore, n_features = 30){
+  
+  barPlotData = avgScore[1:n_features,]
+  
+  barPlot = barPlotData %>%
+    mutate(feature = factor(feature, levels = c(rev(avgScore$feature[1:30])))) %>%
+    ggplot(aes(x =feature, y = AvgMeanDecreaseAccuracy, fill = AvgMeanDecreaseAccuracy)) +
+    geom_bar(stat="identity") +
+    viridis::scale_fill_viridis(option = "D")+
+    theme_bw()+
+    coord_flip()
+  
+  print(barPlot)
+  
+}
 ```
+
+```{r}
+s = readxl::read_excel(path = "data/sample_data_1.xlsx") %>%
+  as.data.frame()
+sampleAnn = readxl::read_excel(path = "data/sample_data_2.xlsx") %>%
+  as.data.frame()
+ScaledImpDataLog10 = read.table("data/data_figure_metabolon_log10.txt")
+colnames(ScaledImpDataLog10) = gsub("\\.","-",colnames(ScaledImpDataLog10))
+bioAnn = readxl::read_excel(path = "data/data_figure_metabolon_log10_ann.xlsx") %>%
+  as.data.frame()
+kraken.taxa = read.table("data/data_figure_kraken.txt")
+kegg = read.table("data/data_figure_kegg.txt")
+```
+
+# Figure 1 Calprotectin
+
+This is the plot of FCP values for fecal samples at 3 time points.
+
+```{r}
+sampleData = s %>%
+  filter(SampleType == "Feces" & !is.na(calprotectin_ave))
+```
+
+```{r results = T}
+fligner.test(log10_calprotectin_ave~as.factor(Time),data = sampleData)
+lme.result1 =  lme(log10_calprotectin_ave ~ age_yrs + antibiotics + study_group_new*Time ,random=~1|SubjectID,  data =  sampleData,method = "ML")
+pander(lme.result1, split.table = Inf)
+```
+
+```{r fig.width=5,fig.height=3}
+sampleData %>%
+  filter(IBD  & !is.na(calprotectin_ave)) %>%
+  ggplot(aes(x = study_group_new_label, y = calprotectin_ave, color = study_group_new_label)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_quasirandom(aes(shape = antibiotics_label))+
+  geom_hline(yintercept = 250,linetype = "dashed")+
+  scale_shape_manual(values = antibiotics_label_shape)+
+  scale_color_manual(values = study_group_new_label_color)+
+  scale_y_log10()+
+  facet_grid(~redcap_event_name_label) +
+  theme_bw() +
+  labs(x = "", y = expression(paste("Calprotectin (",mu,"g/g)")),
+       caption = paste0("There is no significant difference between the FCP of \nIBD and IBD C.diff group.\nThe p value is ", signif(summary(lme.result1)$tTable["study_group_newIBD_C.Diff","p-value"],4),"."))+
+  theme(legend.title = element_blank()) +
+  guides(color = F)
+```
+
+# Figure 1 qPCR
+
+This is the plot of qPCR values for fecal samples at 3 time points.
+
+```{r}
+sampleData = s %>%
+  filter(SampleType == "Feces") %>%
+  mutate(tcdB_ct_ave = ifelse(tcdB_ct_ave == "Undetermined","40",as.character(tcdB_ct_ave))) %>%
+  mutate(tcdB_ct_ave = as.numeric(as.character(tcdB_ct_ave))) %>%
+  filter(!is.na(tcdB_ct_ave))
+```
+
+The undetermined equals 40.
+
+```{r results=T}
+sampleData %>%
+  select(SubjectID, redcap_event_name,study_group_new, tcdB_ct_ave) %>%
+  unique() %>%
+  count(redcap_event_name, study_group_new) %>%
+  spread(key = redcap_event_name, value = n) %>%
+  pander()
+```
+
+```{r results = T}
+temp = sampleData %>%
+  filter(study_group_new %in% c("IBD_C.Diff")) %>%
+  mutate(current_antibiotics = ifelse(antibiotics == "Yes", "Yes","No/Past")) %>%
+  filter(!is.na(clinical_response_to_cdiff_therapy))
+fligner.test(tcdB_ct_ave~as.factor(current_antibiotics),data = temp)
+lme.result0 =  lme(tcdB_ct_ave ~ current_antibiotics+ Time ,random=~1|SubjectID, data =temp,method = "ML")
+pander(lme.result0, split.table = Inf)
+```
+
+Shape by antibiotics.
+
+```{r fig.width=6,fig.height=3}
+sampleData %>%
+  ggplot(aes(x = study_group_new_label, y = tcdB_ct_ave, color = study_group_new_label)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_quasirandom(aes(shape = antibiotics_label))+
+  scale_shape_manual(values = antibiotics_label_shape)+
+  scale_color_manual(values = study_group_new_label_color)+
+  # scale_y_log10()+
+  facet_grid(~redcap_event_name_label) +
+  labs(x = "", y = "C Diff qPCR")+
+  theme_bw()+
+  theme(legend.title = element_blank()) +
+  guides(color = F)
+```
+
+# Figure 2 A-C
+
+This is the PCoA plot based on Bray-Curtis Distance using kraken result.
+
+```{r}
+sampleData = s %>%
+  filter(SampleType == "Feces")
+taxaData = kraken.taxa[,sampleData$SampleID]
+taxaData = taxaData[rowSums(taxaData)!=0,]
+```
+
+The centroid is defined by using all healthy controls (including Healthy>=6 and Healthy<6).
+
+```{r fig.width=9.5,fig.height=3}
+bc <- vegdist(t(taxaData))
+pc <- pcoa(bc)
+pcdf <- cbind(sampleData, pc$vectors[sampleData$SampleID,1:3])
+
+temp = pcdf %>%
+  filter(study_group_new == "Healthy" & redcap_event_name == "Baseline Visit") %>%
+  select(SampleID, Axis.1, Axis.2,Axis.3) %>%
+  mutate(SampleID = "Healthy.Centroid",
+         study_group_new_label = "centroid",
+         SampleType = "Feces",
+         antibiotics_label = "centroid",
+         Abx_Med = "centroid",
+         Dominance  = "centroid",
+         redcap_event_name_label = "Baseline visit") %>%
+  mutate(Axis.1 = mean(Axis.1),
+         Axis.2 = mean(Axis.2),
+         Axis.3 = mean(Axis.3)) %>%
+  unique()
+pcdf %<>% bind_rows(temp)
+
+temp = pcdf %>%
+  filter(study_group_new == "Healthy" & redcap_event_name == "Visit 2") %>%
+  select(SampleID, Axis.1, Axis.2,Axis.3) %>%
+  mutate(SampleID = "Healthy.Centroid",
+         study_group_new_label = "centroid",
+         SampleType = "Feces",
+         antibiotics_label = "centroid",
+         Abx_Med = "centroid",
+         Dominance  = "centroid",
+         redcap_event_name_label = "Visit 2") %>%
+  mutate(Axis.1 = mean(Axis.1),
+         Axis.2 = mean(Axis.2),
+         Axis.3 = mean(Axis.3)) %>%
+  unique()
+pcdf %<>% bind_rows(temp)
+
+temp = pcdf %>%
+  filter(study_group_new == "Healthy" & redcap_event_name == "Visit 3") %>%
+  select(SampleID, Axis.1, Axis.2,Axis.3) %>%
+  mutate(SampleID = "Healthy.Centroid",
+         study_group_new_label = "centroid",
+         SampleType = "Feces",
+         antibiotics_label = "centroid",
+         Abx_Med = "centroid",
+         Dominance  = "centroid",
+         redcap_event_name_label = "Visit 3") %>%
+  mutate(Axis.1 = mean(Axis.1),
+         Axis.2 = mean(Axis.2),
+         Axis.3 = mean(Axis.3)) %>%
+  unique()
+pcdf %<>% bind_rows(temp)
+
+pct_var <- (pc$values$Relative_eig * 100) %>% round()
+
+pcdf %>%
+  mutate(study_group_new_label = gsub("\n"," ", study_group_new_label)) %>%
+  ggplot(aes(x=Axis.1, y=Axis.2)) +
+  geom_point(aes(x=Axis.1, y=Axis.2, color=study_group_new_label, shape = antibiotics_label)) +
+  labs(
+    x=paste0("PCoA axis 1 (", pct_var[1], "%)"),
+    y=paste0("PCoA axis 2 (", pct_var[2], "%)")) +
+  scale_color_manual(values = study_group_new_label_long_color)+
+  scale_shape_manual(values = antibiotics_label_shape)+
+  theme_bw()+
+  facet_grid(.~redcap_event_name_label, scales = "free") +
+  theme(legend.title = element_blank()) + 
+  guides(col = guide_legend(ncol = 2, order = 1),
+         shape = guide_legend(ncol = 2))
+```
+
+# Figure 2 DEF
+
+This is the dendro bar plot for fecal samples.
+
+```{r}
+temp = s %>%
+  filter(SampleType == "Feces") %>%
+  select(SubjectID, redcap_event_name) %>%
+  unique() %>%
+  filter(redcap_event_name == "Visit 3")
+
+sampleData = s %>%
+  filter(SubjectID %in% temp$SubjectID) %>%
+  mutate(study_group = study_group_new)
+taxaData = kraken.taxa[,sampleData$SampleID]
+taxaData = taxaData[rowSums(taxaData)!=0,]
+```
+
+```{r fig.width=17,fig.height=8}
+sampleDataT1 <- sampleData %>%
+  filter(redcap_event_name == "Visit 3")
+taxaDataT1 <- taxaData[,sampleDataT1$SampleID]
+taxaDataT1 <- taxaDataT1[rowSums(taxaDataT1)!=0,]
+
+bc <- vegdist(t(taxaDataT1))
+pc <- pcoa(bc)
+pcdf <- cbind(sampleDataT1, pc$vectors[sampleDataT1$SampleID,1:2])
+dendro_colors <- c(
+  "#dbdad0",# grey
+  "#076302",# green
+  "#33A02C",
+  "#59d151",
+  "#B2DF8A",
+  "#6a3d9a",# purple
+  "#8e5ec1",
+  "#cfb1ef",
+    "#064A77",# blues
+  "#2d83bc",
+  "#A6CEE3",
+  "#4baced",
+  "#06ad97",# qing
+  "#63e2d1",
+  "#c6f2ec",
+  "#ffe100", # yellow
+  "#fcf085",
+  "#f78002",# orange
+  "#f9a804",
+  "#fcc071",
+  "#8c0101",# red
+   "#ffff00",
+  "#f97777",
+  "#ffc4c4",
+   "#ff0000",
+  "#af0166", # rose
+  "#ff0094",
+  "#fc9fd5",
+  "#004cff", # extra
+  "#00ffff",
+  "#80ff00",
+  "#9800ff"
+)
+
+
+
+# 3 time points
+hc.taxa <- taxaData %>%
+  as.matrix() %>%
+  melt(varnames=c("Taxon", "SampleID"))  %>%
+  mutate(Taxon = as.character(Taxon),
+         SampleID = as.character(SampleID))
+
+# 3 time points
+top.hc.taxa.all <- hc.taxa %>%
+  group_by(Taxon) %>%
+  arrange(Taxon) %>%
+  summarize(Maxval = max(value)) %>%
+  arrange(desc(Maxval)) %>%
+  head(n=30)
+
+temp1 <- ifelse(rownames(taxaDataT1) %in% unique(c(as.character(top.hc.taxa.all$Taxon), sampleData$Dominance)), rownames(taxaDataT1),"Other")
+hc.taxaT1 <- rowsum(taxaDataT1, temp1) %>%
+  as.matrix() %>%
+  melt(varnames=c("Taxon", "SampleID")) %>%
+  mutate(Taxon = as.character(Taxon),
+         SampleID = as.character(SampleID))
+
+temp2 <- ifelse(rownames(taxaData) %in% unique(c(as.character(top.hc.taxa.all$Taxon), sampleData$Dominance)), rownames(taxaData),"Other")
+hc.taxa <- rowsum(taxaData, temp2) %>%
+  as.matrix() %>%
+  melt(varnames=c("Taxon", "SampleID")) %>%
+  mutate(Taxon = as.character(Taxon),
+         SampleID = as.character(SampleID))
+
+remove(temp1, temp2)
+
+proteo.total <- hc.taxaT1 %>%
+  filter(SampleID %in% sampleDataT1$SampleID) %>%
+  mutate(Phylum = sapply(strsplit(as.character(Taxon), " "), "[", 1)) %>%
+  group_by(SampleID, Phylum) %>%
+  summarize(value = sum(value)) %>%
+  ungroup() %>%
+  spread(Phylum, value) %>%
+  mutate(Rating = `p__Proteobacteria` / `p__Bacteroidetes`)
+ratings <- proteo.total$Rating
+names(ratings) <- as.character(proteo.total$SampleID)
+ratings <- ratings[order(ratings,decreasing = T)] # greater rating means more proteo bacteria
+
+hc <- hclust(bc, method = "ward.D2")
+dc <- as.dendrogram(hc)
+# proteos <- ratings[labels(dc)]
+dc <- reorder(dc, ratings) # reorder the leaves by their bacteroids ratings,
+hc.data <- dendro_data(dc)
+
+
+hc.labels <- pcdf %>%
+  left_join(
+    mutate(hc.data$labels, label = as.character(label)),
+    by=c("SampleID" = "label"))
+hc.labels %<>%
+  mutate(study_group_new_label = gsub("\n", " ", study_group_new_label))
+
+hc.taxaT1 <- hc.taxaT1 %>%
+  right_join(hc.labels, by="SampleID")
+
+temp3 <- hc.labels %>%
+  select(SubjectID, x,y) %>%
+  unique
+hc.taxa %<>% left_join(sampleData %>% select(SampleID,redcap_event_name_label, SubjectID) %>% unique(), by = "SampleID")
+hc.taxa %<>% right_join(temp3, by = "SubjectID")
+hc.taxa %<>%
+  mutate(Taxon_label = gsub("s__","",gsub(" g__","-",gsub("p__","",Taxon))))
+hc.taxa %<>%
+  mutate(Taxon_label = ifelse(Taxon_label == "Bacteroidetes-Parabacteroides ","Bacteroidetes-Parabacteroides unclassified", Taxon_label))
+hc.taxa %<>%
+  mutate(Taxon_label = ifelse(Taxon_label == "Proteobacteria-Klebsiella ","Proteobacteria-Klebsiella unclassified", Taxon_label))
+hc.taxa %<>%
+  mutate(Taxon_label = ifelse(Taxon_label == "Firmicutes-Lachnoclostridium [Clostridium] bolteae", "Firmicutes-Clostridium bolteae",Taxon_label))
+hc.taxa$Taxon_label = factor(hc.taxa$Taxon_label, levels = unique(hc.taxa$Taxon_label))
+
+temp_colors = dendro_colors
+names(temp_colors) = unique(hc.taxa$Taxon_label)
+
+comptree <- 0.1
+ggplot() +
+  geom_bar(
+    aes(x=x, y = value, fill=Taxon_label), stat="identity",
+    data=hc.taxa) +
+  facet_grid(~redcap_event_name_label, scales = "free",space = "free")+
+  geom_segment(
+    aes(x = x, y = -y * comptree-0.32, xend = xend, yend = -yend * comptree-0.32),
+    data = data.frame(segment(hc.data), redcap_event_name_label = "Visit 3")) +
+  geom_text(
+    aes(x = x, y = -0.3, label = paste0(study_group_new_label,"_", gsub("Subj ","", SubjectID)), color = study_group_new_label),
+    data = hc.labels, hjust=0, size = 2,fontface = "bold") +
+  scale_fill_manual(values=temp_colors) +
+  scale_color_manual(values = study_group_new_label_long_color)+
+  coord_flip() +
+  labs(fill ="",color = "",caption = "Cluster based on Bray-Curtis distance of samples at visit 3") +
+  theme_bw(base_size=14)+
+  theme_dendro() +
+  guides(fill=guide_legend(ncol=2, order = 2))
+```
+
+# Figure 2 G
+
+This is the boxplot of rarefied richness for fecal samples at the baseline visit.
+
+```{r}
+sampleData = s %>%
+  filter(redcap_event_name == "Baseline Visit" & SampleType == "Feces") 
+
+```
+
+```{r fig.width=3.5,fig.height=3.5}
+sampleData %>%
+  ggplot(aes(x = study_group_new_label, y = rarefied_richness_kraken, color = study_group_new_label)) +
+  geom_boxplot(outlier.shape =  NA) +
+  geom_quasirandom()+ 
+  scale_color_manual(values = study_group_new_label_color)+
+  labs(y = "Richness (30000 reads per sample)", x = "")+
+  theme_bw() +
+  guides(color = F)
+```
+
+# Figure 2 H
+
+This is the boxplot of human DNA percentage for fecal samples at 3 time points.
+
+```{r}
+sampleData = s %>%
+  filter(SampleType == "Feces")
+```
+
+```{r fig.width=8, fig.height=4}
+sampleData %>%
+  ggplot(aes(x = study_group_new_label, y = `Percent host reads`, color = study_group_new_label)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_quasirandom(aes(shape = antibiotics_label))+
+  scale_shape_manual(values = antibiotics_label_shape)+
+  scale_color_manual(values = study_group_new_label_color)+
+  scale_y_log10()+
+  facet_grid(~redcap_event_name_label) +
+  labs(x = "", y = "Percent Human DNA")+
+  theme_bw()+
+  theme(legend.title = element_blank()) +
+  guides(color = F)
+```
+
+# Figure 3 PCA
+
+This is a PCA plot based on metabolomics data.
+
+```{r}
+sampleData = sampleAnn
+rownames(sampleData) = sampleData$SAMPLE_NAME
+bioData = ScaledImpDataLog10
+```
+
+```{r fig.width=8,fig.height=3}
+pr <- prcomp(t(bioData),scale  = T)
+percentVar <- 100*round(summary(pr)$importance["Proportion of Variance",],2)
+
+tempData <- merge(sampleData, pr$x[,c("PC1","PC2","PC3")], by.x = "row.names", by.y = "row.names")
+
+tempData %>%
+  mutate(clinical_severity = ifelse(!study_group_new %in% c("IBD_C.Diff", "ONC_C.Diff"),"No_C.Diff", clinical_severity)) %>%
+  mutate(study_group_new_label = gsub("\\n"," ", study_group_new_label)) %>%
+  ggplot( aes(PC1, PC2, color= study_group_new_label,shape = clinical_severity))+
+  geom_point() +
+  xlab(paste0("PC1: ",percentVar["PC1"],"% variance")) +
+  ylab(paste0("PC2: ",percentVar["PC2"],"% variance")) +
+  ggtitle("PCA Plot (All Metabolites)")+
+  # labs(caption = "Subjects <= 2 are labelled.")+
+  scale_color_manual(values = study_group_new_label_long_color)+
+  scale_shape_manual(values = clinical_severity_shape) +
+  theme_bw() +
+  facet_grid(~redcap_event_name_label) +
+   theme(legend.title = element_blank()) 
+```
+
+
+# Figure 3 selected metabolites (chenodeoxycholate, cholate, deoxycholate, lithocholate)
+
+```{r}
+sampleData = sampleAnn
+rownames(sampleData) = sampleData$SAMPLE_NAME
+bioData = ScaledImpDataLog10
+selectedFeatures =  c("chenodeoxycholate","cholate","deoxycholate","lithocholate")
+bioData = bioData[selectedFeatures,]
+bile_acid_ann = readxl::read_excel(path = "data/figure_3_bile_acid_ann.xlsx", sheet = 1)
+```
+
+```{r results=T,fig.height=3.5}
+for (i in 1:length(rownames(bioData))){
+
+  metabolite.i = rownames(bioData)[i]
+  sub_pathway.i = bile_acid_ann %>%
+    filter(Name == metabolite.i)
+  bioData.i = sampleData %>%
+    select(SAMPLE_NAME,SubjectID, study_group_new_label, redcap_event_name_label, antibiotics_label) %>%
+    merge(t(bioData[metabolite.i,,drop = F]), by.x ="SAMPLE_NAME",by.y = "row.names") 
+  colnames(bioData.i)[which(colnames(bioData.i) == metabolite.i)] = "abundance"
+  ## make box plot
+  bp = bioData.i %>%
+    ggplot(aes(x = study_group_new_label, y = abundance, color = study_group_new_label)) +
+    geom_boxplot(outlier.shape = NA)+
+    geom_quasirandom(aes(shape = antibiotics_label))+
+    scale_color_manual(values = study_group_new_label_color)+
+    scale_shape_manual(values = antibiotics_label_shape)+
+    facet_grid(~redcap_event_name_label)+
+    theme_bw() +
+    labs(y = paste0(Hmisc::capitalize(metabolite.i)," (",tolower(sub_pathway.i$Status),")"), x= "")+
+    theme(legend.position = "none") 
+  
+  print(bp)
+  
+}
+```
+
+
+# Figure 4 A
+
+We used the randomForest model to compare IBD C.Diff and Healthy based on the metabolomics data at the baseline visit.
+
+This is the heatmap of the top 30 important features.
+
+```{r}
+sampleData = sampleAnn %>%
+  filter(study_group_new %in% c("Healthy","IBD_C.Diff") & redcap_event_name == "Baseline Visit") 
+rownames(sampleData) = sampleData$SAMPLE_NAME
+bioData = ScaledImpDataLog10[,sampleData$SAMPLE_NAME]
+# use only the known metabolites
+selectedFeatures = bioAnn  %>%
+  filter(BIOCHEMICAL %in% rownames(bioData) & !is.na(PATHWAY_SORTORDER))
+bioData = bioData[which(rownames(bioData) %in% selectedFeatures$BIOCHEMICAL),]
+idx = apply(bioData,1,var) !=0
+bioData = bioData[idx,sampleData$SAMPLE_NAME]
+```
+
+```{r}
+# Make a heatmap for the top 30 important features from the randomForest model
+selectedFeatures_4_A = readxl::read_excel(path = "data/figure_4_A_selected_features.xlsx") %>%
+  as.data.frame()
+rownames(selectedFeatures_4_A) = selectedFeatures_4_A$BIOCHEMICAL
+hpData = bioData[selectedFeatures_4_A$BIOCHEMICAL,]
+```
+
+```{r}
+tempData = sampleData %>%
+  select(SAMPLE_NAME,study_group_new_label, calprotectin_ave) %>%
+  # mutate(study_group_new_label = droplevels(study_group_new_label)) %>%
+  mutate(study_group_new_label = gsub("\n"," ", study_group_new_label)) %>%
+  rename(`Study group` = study_group_new_label,
+         `Calprotectin (µg/g)` = calprotectin_ave)
+rownames(tempData) = tempData$SAMPLE_NAME
+
+ann_colors = list(
+ `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
+)
+
+breaks = unique(c(
+  seq(-3,-0.1,length =80),
+  seq(-0.1,0,length =50),
+  seq(0,0.6,length =50),
+  seq(0.6,2.6,length =80)
+))
+hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
+
+pheatmap(hpData,clustering_distance_rows = "manhattan",clustering_distance_cols = "manhattan",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, treeheight_row = F, show_colnames = F)
+```
+
+# Figure 4 B
+
+We used the randomForest model to compare IBD C.Diff and IBD based on the metabolomics data at the baseline visit.
+
+This is the heatmap of the top 30 important features.
+
+```{r}
+sampleData = sampleAnn %>%
+  filter(study_group_new %in% c("IBD","IBD_C.Diff") & redcap_event_name == "Baseline Visit") 
+rownames(sampleData) = sampleData$SAMPLE_NAME
+bioData = ScaledImpDataLog10[,sampleData$SAMPLE_NAME]
+# use only the know metabolites
+selectedFeatures = bioAnn  %>%
+  filter(BIOCHEMICAL %in% rownames(bioData) & !is.na(PATHWAY_SORTORDER))
+bioData = bioData[which(rownames(bioData) %in% selectedFeatures$BIOCHEMICAL),]
+idx = apply(bioData,1,var) !=0
+bioData = bioData[idx,sampleData$SAMPLE_NAME]
+```
+
+```{r}
+selectedFeatures_4_B =  readxl::read_excel(path = "data/figure_4_B_selected_features.xlsx") %>%
+  as.data.frame()
+rownames(selectedFeatures_4_B) =selectedFeatures_4_B$BIOCHEMICAL
+hpData = bioData[selectedFeatures_4_B$BIOCHEMICAL,]
+```
+
+```{r}
+tempData = sampleData %>%
+  select(SAMPLE_NAME,study_group_new_label, calprotectin_ave) %>%
+  mutate(study_group_new_label = gsub("\n"," ", study_group_new_label)) %>%
+  rename(`Study group` = study_group_new_label,
+         `Calprotectin (µg/g)` = calprotectin_ave)
+rownames(tempData) = tempData$SAMPLE_NAME
+
+ann_colors = list(
+ `Study group` = study_group_new_label_long_color[unique(tempData$`Study group`)]
+)
+
+breaks = unique(c(
+  seq(-3,-0.1,length =80),
+  seq(-0.1,0,length =50),
+  seq(0,0.6,length =50),
+  seq(0.6,2.6,length =80)
+))
+hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
+
+
+pheatmap(hpData,clustering_distance_rows = "manhattan",clustering_distance_cols = "manhattan",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, show_colnames = F, treeheight_row = 0)
+```
+
+
+# Figure 4C 
+
+We used the randomForest model to compare IBD C.Diff and IBD based on the metabolomics data at the baseline visit.
+
+This is a barplot of the top 30 important features.
+
+```{r fig.width=8,fig.height=4}
+avgImportance =   readxl::read_excel(path = "data/figure_4_C_importance.xlsx") %>%
+  as.data.frame()
+barPlotRF(avgScore = avgImportance, n_features = 30)
+```
+
+
+# Figure 4D
+
+```{r}
+sampleData = sampleAnn %>%
+  filter(redcap_event_name == "Baseline Visit") %>%
+  mutate(c_diff = ifelse(grepl("Diff", study_group_new),"c_diff","no_c_diff")) %>%
+  mutate(c_diff = as.factor(c_diff))
+rownames(sampleData) = sampleData$SAMPLE_NAME
+selectedFeatures =  c("putrescine")
+bioData = ScaledImpDataLog10[selectedFeatures,sampleData$SAMPLE_NAME, drop= F]
+sampleData %<>%
+  merge(t(bioData),by.x = "SAMPLE_NAME",by.y =  "row.names")
+```
+
+```{r results=T}
+result = cor.test(x = sampleData$log10HumanPer, y = sampleData$putrescine, method = "spearman", alternative = "g")
+pander(result)
+```
+
+```{r fig.width=4,fig.height=3}
+sampleData %>%
+  ggplot(aes(x =  log10HumanPer, y = putrescine, color = study_group_new_label)) +
+  geom_point() +
+  scale_color_manual(values = study_group_new_label_color) +
+  labs(x = "Log10 Scaled Human DNA Percentage", y = "Putrescine")+
+  theme_bw()+
+  theme(legend.title = element_blank()) 
+```
+
+# Figure 4 EF (isocaproate (i6:0), isocaproyltaurine)
+
+```{r}
+sampleData = sampleAnn
+rownames(sampleData) = sampleData$SAMPLE_NAME
+bioData = ScaledImpDataLog10
+selectedFeatures =  c("isocaproate (i6:0)","isocaproyltaurine")
+bioData = bioData[selectedFeatures,]
+```
+
+```{r fig.height=3.5}
+for (i in 1:length(rownames(bioData))){
+
+  metabolite.i = rownames(bioData)[i]
+  sub_pathway.i = bioAnn %>%
+    filter(BIOCHEMICAL == metabolite.i)
+  bioData.i = sampleData %>%
+    select(SAMPLE_NAME,SubjectID, study_group_new_label, redcap_event_name_label, antibiotics_label) %>%
+    merge(t(bioData[metabolite.i,,drop = F]), by.x ="SAMPLE_NAME",by.y = "row.names") 
+  colnames(bioData.i)[which(colnames(bioData.i) == metabolite.i)] = "abundance"
+
+  ## make box plot
+  bp = bioData.i %>%
+    ggplot(aes(x = study_group_new_label, y = abundance, color = study_group_new_label)) +
+    geom_boxplot(outlier.shape = NA)+
+    geom_quasirandom(aes(shape = antibiotics_label))+
+    scale_color_manual(values = study_group_new_label_color)+
+    scale_shape_manual(values = antibiotics_label_shape)+
+    facet_grid(~redcap_event_name_label)+
+    theme_bw() +
+    theme(legend.position = "none") +
+    ylim(NA,2.8)
+  
+  print(bp)
+}
+
+```
+
+
+# Figure 5 B
+
+We used the randomForest model to compare severe IBD C.Diff and non-severe IBD C.Diff using the metabolomics data at the baseline visit.
+
+This is the heatmap of the top 30 important features.
+
+```{r}
+sampleData = sampleAnn %>%
+  filter(study_group_new == "IBD_C.Diff" & redcap_event_name == "Baseline Visit") %>%
+  mutate(study_group_new = clinical_severity)
+rownames(sampleData) = sampleData$SAMPLE_NAME
+bioData = ScaledImpDataLog10[,sampleData$SAMPLE_NAME]
+# use only the known metabolites
+selectedFeatures = bioAnn  %>%
+  filter(BIOCHEMICAL %in% rownames(bioData) & !is.na(PATHWAY_SORTORDER))
+bioData = bioData[which(rownames(bioData) %in% selectedFeatures$BIOCHEMICAL),]
+idx = apply(bioData,1,var) !=0
+bioData = bioData[idx,sampleData$SAMPLE_NAME]
+```
+
+```{r}
+selectedFeatures_5_B = readxl::read_excel(path = "data/figure_5_B_selected_features.xlsx") %>%
+  as.data.frame()
+rownames(selectedFeatures_5_B) =selectedFeatures_5_B$BIOCHEMICAL
+hpData = bioData[selectedFeatures_5_B$BIOCHEMICAL,]
+```
+
+```{r}
+tempData = sampleData %>%
+  select(SAMPLE_NAME,clinical_severity,  calprotectin_ave) %>%
+  rename(`Clinical Severity` = clinical_severity,
+         `Calprotectin (µg/g)` = calprotectin_ave) 
+rownames(tempData) = tempData$SAMPLE_NAME
+
+ann_colors = list(
+  `Clinical Severity` = clinical_severity_col
+  # ibd_diagnosis = ibd_diagnosis_color[unique(sampleData$ibd_diagnosis)]
+)
+
+breaks = unique(c(
+  seq(-3,-0.1,length =80),
+  seq(-0.1,0,length =50),
+  seq(0,0.6,length =50),
+  seq(0.6,2.6,length =80)
+))
+hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
+
+pheatmap(hpData,clustering_distance_rows = "correlation",clustering_distance_cols = "correlation",clustering_method = "ward.D2",annotation_col = tempData[,c("Clinical Severity","Calprotectin (µg/g)")],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4, treeheight_row = F, show_colnames = F)
+```
+
+# Figure 5 C
+
+This is a boxplot to compare human DNA percentage between severe C.Diff group and non-severe C.Diff group at the baseline visit.
+
+```{r}
+sampleData = s %>%
+  filter(redcap_event_name == "Baseline Visit" & SampleType == "Feces") 
+```
+
+```{r fig.height=3,fig.width=3}
+sampleData %>%
+  filter(study_group_new == "IBD_C.Diff" ) %>%
+  ggplot(aes(x = clinical_severity, y = humanPer, color = clinical_severity)) +
+  geom_boxplot() +
+  scale_color_manual(values = clinical_severity_col)+
+  geom_point()+
+  theme_bw() +
+  guides(color = F)+
+  labs(x = "", y = "Human DNA Percentage")
+```
+
+# Figure 5 D
+
+We used the linear regression to compare subjects responded to C.Diff therapy and those not responded using the metabolomics datat at the baseline visit.
+
+This is a heatmap for the top 30 metabolites that have raw p value < 0.05.
+
+```{r}
+sampleData = sampleAnn %>%
+  filter(study_group_new == "IBD_C.Diff" & redcap_event_name == "Baseline Visit") %>%
+  mutate(clinical_response_to_cdiff_therapy = as.factor(clinical_response_to_cdiff_therapy)) %>%
+  filter(!SubjectID %in% c("Subj 175","Subj 342", "Subj 348")) # Subj 175 was putinto IBD C.Diff group because it was tested tcdB+
+rownames(sampleData) = sampleData$SAMPLE_NAME
+bioData = ScaledImpDataLog10[,sampleData$SAMPLE_NAME]
+# use only the known metabolites
+selectedFeatures = bioAnn  %>%
+  filter(BIOCHEMICAL %in% rownames(bioData) & !is.na(PATHWAY_SORTORDER))
+bioData = bioData[which(rownames(bioData) %in% selectedFeatures$BIOCHEMICAL),]
+idx = apply(bioData,1,var) !=0
+bioData = bioData[idx,sampleData$SAMPLE_NAME]
+```
+
+```{r}
+selectedFeatures_5_D =  readxl::read_excel(path = "data/figure_5_D_selected_features.xlsx") %>%
+  as.data.frame()
+rownames(selectedFeatures_5_D) = selectedFeatures_5_D$feature
+hpData = bioData[selectedFeatures_5_D$feature,sampleData$SAMPLE_NAME]
+```
+
+
+```{r fig.height=6,fig.width=6}
+tempData = sampleData %>%
+  select(SAMPLE_NAME,clinical_response_to_cdiff_therapy, calprotectin_ave) %>%
+  rename(`Clinical response to therapy` = clinical_response_to_cdiff_therapy,
+         `Calprotectin (µg/g)` = calprotectin_ave)
+rownames(tempData) = tempData$SAMPLE_NAME
+
+ann_colors = list(
+ `Clinical response to therapy` = clinical_response_to_cdiff_therapy_color
+)
+
+breaks =unique( c(seq(min(hpData)/1.1,quantile(unlist(hpData))[3],length = 40),
+                  seq(quantile(unlist(hpData))[3],max(hpData),length = 50)))
+hmcols<- colorRampPalette(c('white','#1f78b4','#ff7f00','#e41a1c'))(length(breaks)-1)
+pheatmap(hpData,clustering_distance_rows = "manhattan",clustering_distance_cols = "manhattan",clustering_method = "ward.D2", annotation_col = tempData[,-1],annotation_colors = ann_colors, breaks = breaks,color = hmcols,cellheight = 4,cellwidth = 4,fontsize = 4,show_colnames = F, treeheight_row = 0)
+```
+
+
+
+# Supplementary Figure 2
+
+This is the PCoA plot based on Bray-Curtis distance using kegg pathway data.
+
+```{r}
+sampleData = s %>%
+  filter(SampleType == "Feces") %>%
+  mutate(clinical_severity = ifelse(!study_group_new %in% c("IBD_C.Diff","ONC_C.Diff"),"No_C.Diff", clinical_severity))
+keggData = kegg[,sampleData$SampleID]
+keggData = keggData[rowSums(keggData)!=0,]
+```
+
+The centroid is defined using all healthy controls (including Healthy>=6 and Healthy<6).
+
+```{r fig.height=3, fig.width=9.5}
+bc <- vegdist(t(keggData))
+pc <- pcoa(bc)
+pcdf <- cbind(sampleData, pc$vectors[sampleData$SampleID,1:3])
+temp = pcdf %>%
+  filter(study_group_new == "Healthy" & redcap_event_name == "Baseline Visit") %>%
+  select(SampleID, Axis.1, Axis.2,Axis.3) %>%
+  mutate(SampleID = "Healthy.Centroid",
+         study_group_new_label = "centroid",
+         SampleType = "Feces",
+         antibiotics_label = "centroid",
+         Abx_Med = "centroid",
+         Dominance  = "centroid",
+         clinical_severity = "No_C.Diff",
+         redcap_event_name_label = "Baseline visit") %>%
+  mutate(Axis.1 = mean(Axis.1),
+         Axis.2 = mean(Axis.2),
+         Axis.3 = mean(Axis.3)) %>%
+  unique()
+pcdf %<>% bind_rows(temp)
+temp = pcdf %>%
+  filter(study_group_new == "Healthy" & redcap_event_name == "Visit 2") %>%
+  select(SampleID, Axis.1, Axis.2,Axis.3) %>%
+  mutate(SampleID = "Healthy.Centroid",
+         study_group_new_label = "centroid",
+         SampleType = "Feces",
+         antibiotics_label = "centroid",
+         Abx_Med = "centroid",
+         Dominance  = "centroid",
+         clinical_severity = "No_C.Diff",
+         redcap_event_name_label = "Visit 2") %>%
+  mutate(Axis.1 = mean(Axis.1),
+         Axis.2 = mean(Axis.2),
+         Axis.3 = mean(Axis.3)) %>%
+  unique()
+pcdf %<>% bind_rows(temp)
+temp = pcdf %>%
+  filter(study_group_new == "Healthy" & redcap_event_name == "Visit 3") %>%
+  select(SampleID, Axis.1, Axis.2,Axis.3) %>%
+  mutate(SampleID = "Healthy.Centroid",
+         study_group_new_label = "centroid",
+         SampleType = "Feces",
+         antibiotics_label = "centroid",
+         Abx_Med = "centroid",
+         Dominance  = "centroid",
+         clinical_severity = "No_C.Diff",
+         redcap_event_name_label = "Visit 3") %>%
+  mutate(Axis.1 = mean(Axis.1),
+         Axis.2 = mean(Axis.2),
+         Axis.3 = mean(Axis.3)) %>%
+  unique()
+pcdf %<>% bind_rows(temp)
+
+pct_var <- (pc$values$Relative_eig * 100) %>% round()
+
+pcdf %>%
+  mutate(study_group_new_label = gsub("\n"," ", study_group_new_label)) %>%
+  ggplot(aes(x=Axis.1, y=Axis.2)) +
+  geom_point(aes(x=Axis.1, y=Axis.2, color=study_group_new_label, shape = clinical_severity)) +
+  labs(
+    x=paste0("PCoA axis 1 (", pct_var[1], "%)"),
+    y=paste0("PCoA axis 2 (", pct_var[2], "%)")) +
+  ggtitle("PCoA plot (KEGG)")+
+  scale_color_manual(values = study_group_new_label_long_color)+
+  scale_shape_manual(values = clinical_severity_shape)+
+  theme_bw()+
+  facet_grid(.~redcap_event_name_label, scales = "free") +
+  theme(legend.title = element_blank())+
+   guides(color = guide_legend(ncol = 2, order = 1),
+         shape = guide_legend(ncol = 2)) 
+
+```
+
+# Supplementary Figure 3
+
+This is a plot to summarise the antibiotics information for oncology C.Diff and IBD C.Diff patients.
 
 ```{r}
 sampleData = readxl::read_excel(path = "data/figure_supplementary_figure_3_sample.xlsx") %>%
